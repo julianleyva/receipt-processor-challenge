@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"net/http"
@@ -55,6 +54,7 @@ func calcPoints() http.Handler {
 		retailerFormat := regexp.MustCompile(`^[\w\s\-&]+$`)
 		retailerMatch := retailerFormat.Match([]byte(receipt.Retailer))
 		if !retailerMatch {
+			fmt.Fprint(w, "RETAILER")
 			invalidReceipt(w)
 			return
 		}
@@ -67,6 +67,7 @@ func calcPoints() http.Handler {
 
 		match := priceFormat.Match([]byte(receipt.Total))
 		if !match {
+			fmt.Fprintf(w, "TOTAL PRICE")
 			invalidReceipt(w)
 			return
 		} else {
@@ -77,7 +78,7 @@ func calcPoints() http.Handler {
 				receiptScore += 75
 			}
 			if err != nil {
-				io.WriteString(w, "Regex error: "+err.Error()+"\n")
+				log.Fatal(err)
 			}
 
 			// RULE 3: total is multiple of 25
@@ -86,7 +87,7 @@ func calcPoints() http.Handler {
 				receiptScore += 25
 			}
 			if err != nil {
-				io.WriteString(w, "Regex error: "+err.Error()+"\n")
+				log.Fatal(err)
 			}
 		}
 
@@ -97,7 +98,7 @@ func calcPoints() http.Handler {
 		// RULE 5: lengths of item descriptions
 		for _, item := range receipt.Items {
 
-			descFormat := regexp.MustCompile(`^[\\w\\s\\-]+$`)
+			descFormat := regexp.MustCompile(`^[\w\s\-]+$`)
 			descMatch := descFormat.Match([]byte(item.ShortDescription))
 			if !descMatch {
 				invalidReceipt(w)
@@ -115,7 +116,7 @@ func calcPoints() http.Handler {
 				priceAsNum, err := strconv.ParseFloat(item.Price, 64)
 
 				if err != nil {
-					fmt.Fprintf(w, "Failed to parse item price: "+err.Error()+"\n")
+					log.Fatal(err)
 				} else {
 					receiptScore += int(math.Ceil(priceAsNum * 0.2))
 				}
@@ -133,7 +134,7 @@ func calcPoints() http.Handler {
 			day, err := strconv.ParseFloat(string(receipt.PurchaseDate[9]), 64)
 
 			if err != nil {
-				fmt.Fprintf(w, "Failed to parse purchase date: "+err.Error()+"\n")
+				log.Fatal(err)
 			} else if math.Mod(day, 2) != 0 {
 				receiptScore += 6
 			}
@@ -152,7 +153,7 @@ func calcPoints() http.Handler {
 			time, err := strconv.ParseFloat(timeString, 64)
 
 			if err != nil {
-				fmt.Fprintf(w, "Failed to parse purchase time: "+err.Error()+"\n")
+				log.Fatal(err)
 			} else if time > 1400 && time < 1600 {
 				receiptScore += 10
 			}
@@ -165,27 +166,38 @@ func calcPoints() http.Handler {
 		// Prepare JSON response.
 		error := json.NewEncoder(w).Encode(map[string]string{"id": id})
 		if error != nil {
-			fmt.Fprintf(w, "JSON encoder error: "+err.Error()+"\n")
+			log.Fatal(error)
 		}
-
 	})
 }
 
 func invalidReceipt(w http.ResponseWriter) {
 	w.WriteHeader(400)
-	fmt.Fprintf(w, "The receipt is invalid.\n")
 }
 
 func getPoints() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		//do stuff here
+		req.ParseForm()
+		idVal := req.PathValue("id")
+		points := idScores[idVal]
+		if points == 0 {
+			w.WriteHeader(404)
+			fmt.Fprintf(w, "No receipt found for that id.\n")
+			return
+		} else {
+			error := json.NewEncoder(w).Encode(map[string]int64{"points": points})
+			if error != nil {
+				log.Fatal(error)
+			}
+			return
+		}
 	})
 }
 
 func main() {
 	mux := http.NewServeMux()
 
-	mux.Handle("/receipts/process", calcPoints())
+	mux.Handle("POST /receipts/process", calcPoints())
 	mux.Handle("GET /receipts/{id}/points", getPoints())
 
 	http.ListenAndServe(":8080", mux)
