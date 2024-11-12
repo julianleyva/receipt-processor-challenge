@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -54,7 +53,6 @@ func calcPoints() http.Handler {
 		retailerFormat := regexp.MustCompile(`^[\w\s\-&]+$`)
 		retailerMatch := retailerFormat.Match([]byte(receipt.Retailer))
 		if !retailerMatch {
-			fmt.Fprint(w, "RETAILER")
 			invalidReceipt(w)
 			return
 		}
@@ -67,7 +65,6 @@ func calcPoints() http.Handler {
 
 		match := priceFormat.Match([]byte(receipt.Total))
 		if !match {
-			fmt.Fprintf(w, "TOTAL PRICE")
 			invalidReceipt(w)
 			return
 		} else {
@@ -182,7 +179,6 @@ func getPoints() http.Handler {
 		points := idScores[idVal]
 		if points == 0 {
 			w.WriteHeader(404)
-			fmt.Fprintf(w, "No receipt found for that id.\n")
 			return
 		} else {
 			error := json.NewEncoder(w).Encode(map[string]int64{"points": points})
